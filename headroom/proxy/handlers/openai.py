@@ -2942,6 +2942,7 @@ class OpenAIHandlerMixin:
                 },
             )
         model = body.get("model", "unknown")
+        requested_model = model
         messages = body.get("messages", [])
         original_client_messages = copy.deepcopy(messages)
         custom_upstream_base_url = _resolve_openai_upstream_base(request.headers)
@@ -3252,6 +3253,8 @@ class OpenAIHandlerMixin:
 
         # Optimization
         transforms_applied = []
+        if model != requested_model:
+            transforms_applied.append(f"model_router:{requested_model}->{model}")
         pipeline_timing: dict[str, float] = {}
         waste_signals_dict: dict[str, int] | None = None
         optimized_messages = messages
@@ -4940,6 +4943,7 @@ class OpenAIHandlerMixin:
             )
 
         model = body.get("model", "unknown")
+        requested_model = model
         stream = body.get("stream", False)
         body_mutation_tracker = BodyMutationTracker()
         _bypass = self._headroom_bypass_enabled(request.headers)
@@ -5132,6 +5136,8 @@ class OpenAIHandlerMixin:
         # denominator we haven't earned.
         attempted_input_tokens = 0
         transforms_applied: list[str] = []
+        if model != requested_model:
+            transforms_applied.append(f"model_router:{requested_model}->{model}")
         optimization_latency = (time.time() - start_time) * 1000
 
         # Memory: inject context and tools for Responses API requests.
