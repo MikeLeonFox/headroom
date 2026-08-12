@@ -5,6 +5,7 @@ from fastapi.responses import JSONResponse, Response
 from fastapi.testclient import TestClient
 
 from headroom.providers.model_metadata import (
+    MODEL_INFO_ENDPOINT,
     MODEL_METADATA_LIST_ENDPOINT,
     ModelMetadataEndpoint,
     handle_model_metadata_endpoint,
@@ -13,6 +14,9 @@ from headroom.providers.model_metadata import (
 
 
 def test_model_metadata_endpoints_are_explicit() -> None:
+    assert MODEL_INFO_ENDPOINT == ModelMetadataEndpoint(
+        "/v1/model/info", "/model/info", "model/info"
+    )
     assert MODEL_METADATA_LIST_ENDPOINT == ModelMetadataEndpoint(
         "/v1/models",
         "/backend-api/models",

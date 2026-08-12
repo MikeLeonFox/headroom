@@ -19,6 +19,7 @@ from headroom.providers.codex.live import (
 from headroom.providers.codex.responses import handle_chatgpt_codex_responses_subpath
 from headroom.providers.codex.runtime import resolve_codex_routing
 from headroom.providers.model_metadata import (
+    MODEL_INFO_ENDPOINT,
     MODEL_METADATA_LIST_ENDPOINT,
     handle_model_metadata_endpoint,
     model_metadata_get_endpoint,
@@ -462,6 +463,17 @@ def register_provider_routes(app: FastAPI, proxy: Any) -> None:
             request,
             publisher,
             VERTEX_STREAM_RAW_PREDICT.name,
+        )
+
+    @app.get("/v1/model/info")
+    async def model_info(request: Request):
+        provider_name = proxy.provider_runtime.model_metadata_provider(dict(request.headers))
+        return await handle_model_metadata_endpoint(
+            proxy,
+            request,
+            endpoint=MODEL_INFO_ENDPOINT,
+            provider_api_base_url=_api_target(proxy, provider_name),
+            provider_name=provider_name,
         )
 
     @app.get("/v1/models")

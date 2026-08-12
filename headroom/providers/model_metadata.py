@@ -21,6 +21,9 @@ class ModelMetadataEndpoint:
 
 
 MODEL_METADATA_LIST_ENDPOINT = ModelMetadataEndpoint("/v1/models", "/backend-api/models")
+# LiteLLM exposes the richer model capabilities (including max_input_tokens)
+# here rather than in the OpenAI-compatible /v1/models response.
+MODEL_INFO_ENDPOINT = ModelMetadataEndpoint("/v1/model/info", "/model/info", "model/info")
 
 
 def model_metadata_get_endpoint(model_id: str) -> ModelMetadataEndpoint:
