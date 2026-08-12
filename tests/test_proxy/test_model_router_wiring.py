@@ -247,6 +247,37 @@ def test_bypass_request_is_never_model_rewritten() -> None:
     assert _forwarded_model(http) == "claude-sonnet-4-6"
 
 
+def test_openai_chat_request_gets_model_rewritten_when_enabled() -> None:
+    app = create_app(_messages_config())
+    with TestClient(app) as client:
+        http = _install_fake_client(client.app.state.proxy)
+        resp = client.post(
+            "/v1/chat/completions",
+            json={
+                "model": "claude-sonnet-4-6",
+                "messages": [{"role": "user", "content": "hi"}],
+            },
+        )
+    assert resp.status_code == 200
+    assert _forwarded_model(http) == "claude-haiku-4-5"
+
+
+def test_openai_chat_bypass_is_never_model_rewritten() -> None:
+    app = create_app(_messages_config())
+    with TestClient(app) as client:
+        http = _install_fake_client(client.app.state.proxy)
+        resp = client.post(
+            "/v1/chat/completions",
+            json={
+                "model": "claude-sonnet-4-6",
+                "messages": [{"role": "user", "content": "hi"}],
+            },
+            headers={"x-headroom-bypass": "true"},
+        )
+    assert resp.status_code == 200
+    assert _forwarded_model(http) == "claude-sonnet-4-6"
+
+
 def test_vertex_raw_predict_model_is_not_rewritten_in_body() -> None:
     # When the model comes from the provider URL (Vertex rawPredict), the upstream
     # model is set by the path, so routing must not rewrite body["model"].

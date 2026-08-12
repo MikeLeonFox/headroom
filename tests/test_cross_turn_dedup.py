@@ -287,6 +287,18 @@ def test_apply_dedups_reread_and_keeps_prefix_stable():
     assert _tool_texts(out2)[:1] == _tool_texts(out1)  # t1 block byte-identical
 
 
+def test_dedup_hash_suppresses_exact_short_tool_output():
+    # Exact hashes cover re-runs too short for the line-span heuristic.
+    text = "\n".join(["same tool output"] * 3)
+    blocks = [_blk(text, 1), _blk(text, 3)]
+    out, stats = dedup_blocks(blocks)
+
+    assert out[0].text == text
+    assert out[1].text.startswith("[↑same tool output as msg 1; sha256:")
+    assert stats["exact_hash_folds"] == 1
+    assert stats["chars_removed"] > 0
+
+
 def test_apply_no_dedup_when_flag_off():
     span = "\n".join(f"    v_{i} = f({i})" for i in range(12))
     import copy

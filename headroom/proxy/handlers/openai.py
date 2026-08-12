@@ -1662,6 +1662,35 @@ class OpenAIHandlerMixin:
         """Return True when inbound headers request full passthrough."""
         return _headroom_bypass_enabled(headers)
 
+    def _maybe_route_openai_model(
+        self,
+        model: str,
+        messages: object,
+        body: dict[str, Any],
+        body_mutation_tracker: Any | None,
+        bypass: bool,
+        *,
+        system: object = None,
+    ) -> str:
+        """Apply the shared opt-in model router to OpenAI-compatible requests."""
+        from headroom.proxy.model_router import estimate_input_tokens
+
+        router = getattr(self, "model_router", None)
+        if router is None or not router.enabled or bypass:
+            return model
+        decision = router.select(
+            model=model,
+            input_tokens=estimate_input_tokens(messages, body.get("tools"), system),
+            has_tools=bool(body.get("tools")),
+        )
+        logger.info("model routing decision: %s", decision.reason)
+        if not decision.changed:
+            return model
+        body["model"] = decision.routed_model
+        if body_mutation_tracker is not None:
+            body_mutation_tracker.mark_mutated("model_router")
+        return decision.routed_model
+
     def _resolve_openai_upstream(self, request: Request) -> str:
         """Return the OpenAI upstream base URL for ``request``.
 
@@ -2957,6 +2986,13 @@ class OpenAIHandlerMixin:
             )
 
         stream = body.get("stream", False)
+        model = self._maybe_route_openai_model(
+            model,
+            messages,
+            body,
+            None,
+            self._headroom_bypass_enabled(request.headers),
+        )
 
         # Learn from the original client payload before memory context or
         # compression mutates it, mirroring the Responses and Anthropic
@@ -4942,6 +4978,14 @@ class OpenAIHandlerMixin:
             messages.append({"role": "system", "content": instructions})
         if isinstance(input_data, str):
             messages.append({"role": "user", "content": input_data})
+        model = self._maybe_route_openai_model(
+            model,
+            input_data if isinstance(input_data, list) else messages,
+            body,
+            body_mutation_tracker,
+            _bypass,
+            system=instructions,
+        )
 
         headers = dict(request.headers.items())
         headers.pop("host", None)

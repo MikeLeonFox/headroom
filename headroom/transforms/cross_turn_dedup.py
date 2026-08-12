@@ -28,6 +28,7 @@ Pure stdlib, deterministic, never raises (returns input unchanged on any error).
 
 from __future__ import annotations
 
+import hashlib
 import re
 from dataclasses import dataclass
 
@@ -116,6 +117,16 @@ def _is_trivial(line: str) -> bool:
         "'''",
         "...",
     }
+
+
+def _exact_pointer(text: str, ref_turn: int) -> str:
+    """Pointer for a byte-identical earlier tool result, labelled by its hash.
+
+    The hash is observability only: recovery stays in-context at ``ref_turn``.
+    It lets an operator distinguish safe exact suppression from a line-span fold.
+    """
+    digest = hashlib.sha256(text.encode("utf-8", "replace")).hexdigest()[:12]
+    return f"[↑same tool output as msg {ref_turn}; sha256:{digest}]"
 
 
 def _pointer(span: list[str], ref_turn: int, delta: int = 0) -> str:
@@ -232,8 +243,19 @@ def dedup_blocks(
     """Rewrite later verbatim spans to in-context pointers. Prefix-monotonic
     (cache-safe) and information-preserving (accuracy-safe). Returns
     (new_blocks, stats). Never raises."""
-    stats = {"spans_folded": 0, "lines_removed": 0, "chars_removed": 0, "blocks": len(blocks)}
+    stats = {
+        "spans_folded": 0,
+        "exact_hash_folds": 0,
+        "lines_removed": 0,
+        "chars_removed": 0,
+        "blocks": len(blocks),
+    }
     try:
+        # Maps exact earlier outputs to their stable message ordinal. This is
+        # deliberately separate from line-span matching: a byte-identical file
+        # or tool re-run can be suppressed even when it is too short to have a
+        # useful multi-line anchor.
+        exact_outputs: dict[str, int] = {}
         # corpus[i] = verbatim lines of block i's OUTPUT (None where folded).
         corpus: list[list[str | None]] = []
         anchor_index: dict[str, list[tuple[int, int]]] = {}
@@ -248,6 +270,20 @@ def dedup_blocks(
                 _index_lines(verbatim, len(corpus), anchor_index)
                 corpus.append(verbatim)
                 out_blocks.append(blk)
+                exact_outputs.setdefault(blk.text, blk.turn)
+                continue
+
+            ref_turn = exact_outputs.get(blk.text)
+            exact = _exact_pointer(blk.text, ref_turn) if ref_turn is not None else ""
+            # Keep the existing small-output guard: two-line snippets are cheap
+            # to retain and callers rely on them staying literal. Exact hash
+            # suppression targets meaningful repeated tool/file reads.
+            if ref_turn is not None and len(lines) >= min_lines and len(exact) < len(blk.text):
+                out_blocks.append(DedupBlock(text=exact, turn=blk.turn, protected=False))
+                corpus.append([None] * len(lines))
+                stats["exact_hash_folds"] += 1
+                stats["lines_removed"] += len(lines)
+                stats["chars_removed"] += len(blk.text) - len(exact)
                 continue
 
             out: list[str] = []
@@ -281,11 +317,22 @@ def dedup_blocks(
             # aligned with ``corpus``; _index_lines skips them.
             _index_lines(verbatim, len(corpus), anchor_index)
             corpus.append(verbatim)
-            out_blocks.append(DedupBlock(text="\n".join(out), turn=blk.turn, protected=False))
+            output = "\n".join(out)
+            out_blocks.append(DedupBlock(text=output, turn=blk.turn, protected=False))
+            # Only index an unmodified full block. A folded output is a pointer,
+            # not a new in-context source for later exact references.
+            if output == blk.text:
+                exact_outputs.setdefault(blk.text, blk.turn)
 
         return out_blocks, stats
     except Exception:  # never break the proxy
-        return blocks, {"spans_folded": 0, "lines_removed": 0, "chars_removed": 0, "error": True}
+        return blocks, {
+            "spans_folded": 0,
+            "exact_hash_folds": 0,
+            "lines_removed": 0,
+            "chars_removed": 0,
+            "error": True,
+        }
 
 
 def is_prefix_monotonic(

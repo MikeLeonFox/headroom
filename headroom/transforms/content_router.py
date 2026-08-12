@@ -5818,7 +5818,7 @@ class ContentRouter(Transform):
             if len(dblocks) < 2:
                 return messages
             deduped, stats = dedup_blocks(dblocks)
-            if not stats.get("spans_folded"):
+            if not (stats.get("spans_folded") or stats.get("exact_hash_folds")):
                 return messages
 
             new_messages = list(messages)
@@ -5852,11 +5852,23 @@ class ContentRouter(Transform):
                     blk["content"] = sub_list
                     m["content"][blk_idx] = blk
 
+            exact_folds = stats.get("exact_hash_folds", 0)
             if route_counts is not None:
                 route_counts["cross_turn_dedup"] = (
                     route_counts.get("cross_turn_dedup", 0) + stats["spans_folded"]
                 )
+                if exact_folds:
+                    route_counts["exact_tool_output_dedup"] = (
+                        route_counts.get("exact_tool_output_dedup", 0) + exact_folds
+                    )
             transforms_applied.append(f"router:cross_turn_dedup:{stats['spans_folded']}")
+            if exact_folds:
+                transforms_applied.append(f"router:exact_tool_output_dedup:{exact_folds}")
+            logger.info(
+                "content_router: exact tool-output dedup folds=%d chars_saved=%d",
+                exact_folds,
+                stats.get("chars_removed", 0),
+            )
             return new_messages
         except Exception:  # never break the proxy
             return messages
